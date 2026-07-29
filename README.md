@@ -303,3 +303,5 @@ Chart colours are the validated categorical palette from the `dataviz` method:
 worst adjacent-pair CVD ΔE 9.1, normal-vision ΔE 22.9. Two slots sit below 3:1
 on white, so every line carries a **direct end-label**, a legend, and a table
 view — identity is never carried by colour alone.
+#   s t r i v e p o r t a l  
+ 
