@@ -1,0 +1,409 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design system.
+
+   Every value below comes from the spec. Components reference the semantic
+   utilities at the bottom of this file rather than restating pixel values, so
+   changing a radius or a row height happens once, here.
+   --------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+   Typeface — Sequel Sans.
+
+   Sequel Sans is a licensed font (Or Type) and is not redistributable, so the
+   files are not in the repo. Drop the licensed woff2 files into /public/fonts
+   and they are picked up automatically; until then the stack falls through to
+   Inter, which is the closest free grotesque and shares Sequel's metrics
+   closely enough that layout does not shift when the real font arrives.
+
+   Weights used: Roman (400) for body, Medium (500) for headings.
+   --------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Sequel Sans";
+  src: url("/fonts/SequelSans-RomanBody.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Sequel Sans";
+  src: url("/fonts/SequelSans-MediumBody.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Sequel Sans";
+  src: url("/fonts/SequelSans-SemiBoldBody.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  /* Neutrals ------------------------------------------------------------- */
+  --color-ink-950: #0a0a0a;
+  --color-ink-900: #1a1a1a;
+  --color-ink-700: #52504b;
+  --color-ink-500: #7a7873;
+  --color-ink-400: #a3a19b;
+  --color-ink-200: #ebebeb; /* spec border colour */
+  --color-ink-100: #f2f1ee;
+  --color-ink-50: #f7f6f3;
+
+  --color-line: #ebebeb;
+
+  /* Surfaces --------------------------------------------------------------
+     The shell is a warm page plane with the app floating on it as a rounded
+     white panel. Cards inside are a soft warm fill with no border; anything
+     nested inside a card returns to white. That three-step depth is what makes
+     the layout read without drawing a single line. */
+  --color-plane: #eae8e3;   /* page behind the app */
+  --color-panel: #ffffff;   /* the app surface */
+  --color-surface: #f7f6f3; /* card fill */
+  --color-raised: #ffffff;  /* card-on-card */
+
+  /* Accents for badges — soft tints, never saturated fills. */
+  --color-mint-100: #dcf5e7;
+  --color-mint-700: #1a7f4b;
+  --color-amber-100: #fdeecd;
+  --color-amber-700: #8a5a00;
+  --color-sky-100: #dcecfd;
+  --color-sky-700: #1c5fa8;
+
+  --color-brand: var(--brand, #1c1917);
+  --color-brand-soft: color-mix(in oklab, var(--brand, #1c1917) 10%, white);
+  --color-brand-ring: color-mix(in oklab, var(--brand, #1c1917) 35%, white);
+
+  --color-ok-600: #15803d;
+  --color-ok-100: #dcfce7;
+  --color-warn-600: #b45309;
+  --color-warn-100: #fef3c7;
+  --color-stop-600: #b91c1c;
+  --color-stop-100: #fee2e2;
+
+  /* Type ----------------------------------------------------------------- */
+  --font-sans: "Sequel Sans", var(--font-inter), ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", monospace;
+
+  /* Scale: 14/20 Roman · 12/16 Roman · 18/24 Medium · 28/32 Medium */
+  --text-small: 12px;
+  --text-small--line-height: 16px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-h2: 18px;
+  --text-h2--line-height: 24px;
+  --text-h1: 28px;
+  --text-h1--line-height: 32px;
+
+  /* Layout --------------------------------------------------------------- */
+  --spacing-sidebar: 230px;
+  --spacing-gutter: 24px;
+  --spacing-section: 32px;
+
+  /* Radii ---------------------------------------------------------------- */
+  --radius-nav: 8px;
+  --radius-cta: 10px;
+  --radius-pill: 6px;
+  --radius-card: 20px;
+
+  --shadow-lift: 0 1px 2px rgb(12 10 9 / 0.04), 0 4px 16px rgb(12 10 9 / 0.06);
+  --shadow-pop: 0 8px 32px rgb(12 10 9 / 0.14);
+
+  /* Motion ----------------------------------------------------------------
+     The built-in CSS easings are too weak to read as intentional. These are
+     the stronger variants: ease-out for anything entering or responding to a
+     press, ease-in-out for movement across the screen.
+
+     ease-in is deliberately absent. It delays the first few frames — exactly
+     when the user is watching — so it reads as lag no matter the duration. */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+html {
+  background: var(--color-plane);
+  color: var(--color-ink-900);
+  /* Approval bars sit at the bottom of the viewport on phones. */
+  scroll-padding-bottom: 7rem;
+}
+
+body {
+  font-family: var(--font-sans);
+  /* Spec: 14/20 Roman is the default text. */
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Spec: 0px letter spacing everywhere. Tailwind's `tracking-*` utilities and
+   the browser's own heading defaults are both overridden at the root so no
+   component can reintroduce tracking by accident. */
+*,
+*::before,
+*::after {
+  letter-spacing: 0;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 500;
+}
+
+/**
+ * Reduced motion means gentler, not none.
+ *
+ * Killing every transition is the common over-correction: it makes state
+ * changes snap, which is *harder* to follow, and the setting exists for motion
+ * sickness — caused by movement, not by fading. So colour and opacity survive;
+ * anything that travels or scales does not.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-property: opacity, color, background-color, border-color,
+      box-shadow, fill, stroke !important;
+    transition-duration: 150ms !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   Component utilities — the spec, expressed once.
+   --------------------------------------------------------------------------- */
+
+/**
+ * Card: 16px padding, 20px radius.
+ *
+ * Filled rather than outlined — depth comes from the surface stepping away
+ * from the panel, not from a border. A hairline is kept as an inset ring so the
+ * edge still resolves on a white panel without reading as a drawn box.
+ */
+@utility card {
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.03);
+}
+
+/** Card that supplies its own padding (lists, tables, media). */
+@utility card-flush {
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.03);
+  overflow: hidden;
+}
+
+/** A tile sitting inside a card — returns to white to lift off the fill. */
+@utility card-raised {
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--color-raised);
+}
+
+/** Count badge beside a section heading: black square, white numeral. */
+@utility count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding-inline: 6px;
+  border-radius: 6px;
+  background: var(--color-ink-950);
+  color: #fff;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+}
+
+/** Primary action: 40px tall, 12px label, 12px side padding, 10px radius. */
+@utility cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  padding-inline: 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  /* Named properties, never `all` — `all` animates layout properties too and
+     drags the whole thing off the compositor. */
+  transition:
+    transform 160ms var(--ease-out-strong),
+    background-color 120ms ease,
+    opacity 120ms ease;
+}
+
+/* Press feedback. The interface should visibly acknowledge the press at the
+   moment it happens — this is the single cheapest thing that makes a UI feel
+   like it is listening. */
+.cta:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/** Pill / status chip: 22px tall, 12px label, 4px side padding, 6px radius. */
+@utility pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-inline: 4px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/** Navigation row: 32px tall, 8px padding, 8px radius. Gap is on the list. */
+@utility nav-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding-inline: 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  transition:
+    transform 160ms var(--ease-out-strong),
+    background-color 120ms ease;
+}
+
+.nav-row:active {
+  transform: scale(0.98);
+}
+
+/**
+ * Popovers and dropdowns.
+ *
+ * Scale in from the trigger, not from the centre of the screen — a menu that
+ * grows out of the button that opened it reads as caused by the click.
+ * Modals are exempt and stay centred: they aren't anchored to anything.
+ *
+ * Starts at 0.96 rather than 0, because nothing in the physical world appears
+ * from literally nothing; a near-full starting scale reads as arriving rather
+ * than materialising.
+ */
+@utility popover {
+  transform-origin: var(--transform-origin, top right);
+  transition:
+    opacity 150ms var(--ease-out-strong),
+    transform 150ms var(--ease-out-strong);
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/**
+ * Staggered entrance for a list. 40ms apart — enough to read as a cascade,
+ * short enough that the last item isn't perceptibly late.
+ */
+@utility stagger {
+  & > * {
+    animation: rise 260ms var(--ease-out-strong) both;
+  }
+  & > *:nth-child(1) { animation-delay: 0ms; }
+  & > *:nth-child(2) { animation-delay: 40ms; }
+  & > *:nth-child(3) { animation-delay: 80ms; }
+  & > *:nth-child(4) { animation-delay: 120ms; }
+  & > *:nth-child(5) { animation-delay: 160ms; }
+  & > *:nth-child(6) { animation-delay: 200ms; }
+  & > *:nth-child(n + 7) { animation-delay: 240ms; }
+}
+
+/* Hover lifts only where there's a real pointer. On touch, hover fires on tap
+   and leaves the element stuck in its hover state. */
+@utility hover-lift {
+  transition: transform 160ms var(--ease-out-strong);
+
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      transform: translateY(-1px);
+    }
+  }
+}
+
+/** The 4px gap between navigation rows. */
+@utility nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/** Table row: 24px tall, 16px horizontal padding. */
+@utility table-row {
+  height: 24px;
+  padding-inline: 16px;
+}
+
+/** 32px between major sections. */
+@utility section-gap {
+  margin-top: 32px;
+}
+
+@utility safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+/* ---------------------------------------------------------------------------
+   Motion
+   --------------------------------------------------------------------------- */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-rise {
+  animation: rise 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/**
+ * Toast entrance, as a transition rather than a keyframe.
+ *
+ * Keyframes restart from frame zero when re-triggered; transitions retarget
+ * from wherever the element currently is. Approving a run of posts fires
+ * toasts back to back, so a keyframe would visibly jump each time.
+ */
+@utility toast-in {
+  transition:
+    opacity 200ms var(--ease-out-strong),
+    transform 200ms var(--ease-out-strong);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+}
