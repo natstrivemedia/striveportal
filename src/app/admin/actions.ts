@@ -12,6 +12,7 @@ import { requireAdmin } from "@/lib/auth";
 import { newPortalToken, slugify } from "@/lib/tokens";
 import { isValidTimezone } from "@/lib/timezones";
 import { putObject, deleteObject } from "@/lib/storage";
+import { resizeImage } from "@/lib/image";
 import { getClientBySlug, UUID_RE } from "@/lib/queries";
 import { notifyContentReady } from "@/lib/email";
 import type { Client, ItemStatus } from "@/lib/types";
@@ -511,24 +512,12 @@ export async function uploadLogo(slug: string, formData: FormData) {
   if (file.size > 5 * 1024 * 1024) return;
 
   const input = Buffer.from(await file.arrayBuffer());
-
-  let output = input;
-  let ext = "png";
-  try {
-    const sharp = (await import("sharp")).default;
-    output = await sharp(input)
-      .resize(256, 256, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .webp({ quality: 90 })
-      .toBuffer();
-    ext = "webp";
-  } catch {
-    // Resizing is an optimisation; a failure must not lose the upload.
-  }
+  const out = await resizeImage(input, 256, "contain", file.type, "png");
 
   const key = await putObject(
-    `logos/${client.id}-${Date.now()}.${ext}`,
-    output,
-    ext === "webp" ? "image/webp" : file.type,
+    `logos/${client.id}-${Date.now()}.${out.ext}`,
+    out.body,
+    out.contentType,
   );
 
   const previous = client.logo_path;

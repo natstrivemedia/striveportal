@@ -9,6 +9,7 @@ import { isAdmin } from "@/lib/auth";
 import { putObject } from "@/lib/storage";
 import { UUID_RE } from "@/lib/queries";
 import { resolveClient } from "@/lib/portal";
+import { imageSize, resizeImage } from "@/lib/image";
 
 type ItemRow = {
   id: string;
@@ -88,21 +89,12 @@ export async function POST(req: NextRequest) {
   let thumbPath: string | null = null;
 
   if (file.type.startsWith("image/")) {
-    try {
-      const sharp = (await import("sharp")).default;
-      const image = sharp(buffer, { animated: false });
-      const meta = await image.metadata();
-      width = meta.width ?? null;
-      height = meta.height ?? null;
-
-      const thumb = await image
-        .resize(640, 640, { fit: "inside", withoutEnlargement: true })
-        .webp({ quality: 80 })
-        .toBuffer();
-      thumbPath = await putObject(`${base}.thumb.webp`, thumb, "image/webp");
-    } catch {
-      // A thumbnail is an optimisation, not a requirement — a failure here must
-      // not lose the upload the user just made.
+    // Both degrade to no-ops where sharp is unavailable (Cloudflare Workers);
+    // a thumbnail is an optimisation, never a reason to lose an upload.
+    ({ width, height } = await imageSize(buffer));
+    const thumb = await resizeImage(buffer, 640, "inside", file.type, ext);
+    if (thumb.resized) {
+      thumbPath = await putObject(`${base}.thumb.${thumb.ext}`, thumb.body, thumb.contentType);
     }
   }
 

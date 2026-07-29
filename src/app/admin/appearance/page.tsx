@@ -3,6 +3,7 @@ import { sql } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import { getWorkspace, isHex } from "@/lib/workspace";
 import { putObject, deleteObject } from "@/lib/storage";
+import { resizeImage } from "@/lib/image";
 import { AppearanceForm } from "@/components/admin/AppearanceForm";
 
 export const metadata = { title: "Appearance · Strive Media" };
@@ -31,19 +32,13 @@ async function save(formData: FormData) {
 
   const file = formData.get("logo");
   if (file instanceof File && file.size > 0 && file.type.startsWith("image/")) {
-    let body = Buffer.from(await file.arrayBuffer());
-    let ext = "png";
-    try {
-      const sharp = (await import("sharp")).default;
-      body = await sharp(body)
-        .resize(128, 128, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-        .webp({ quality: 90 })
-        .toBuffer();
-      ext = "webp";
-    } catch {
-      /* resizing is an optimisation, not a requirement */
-    }
-    const key = await putObject(`workspace/icon-${Date.now()}.${ext}`, body, "image/webp");
+    const input = Buffer.from(await file.arrayBuffer());
+    const out = await resizeImage(input, 128, "contain", file.type, "png");
+    const key = await putObject(
+      `workspace/icon-${Date.now()}.${out.ext}`,
+      out.body,
+      out.contentType,
+    );
     const previous = current.logo_path;
     await sql`update workspace set logo_path = ${key} where id = 1`;
     if (previous) await deleteObject(previous).catch(() => {});

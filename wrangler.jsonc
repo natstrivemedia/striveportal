@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "strive-portal",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-03-25",
+
+  // nodejs_compat: postgres.js needs node:net TCP sockets to reach Supabase.
+  // global_fetch_strictly_public: required by the OpenNext adapter.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "strive-portal"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+
+  // Secrets are NOT set here — they'd end up in git. Set them with:
+  //   npx wrangler secret put DATABASE_URL
+  //   npx wrangler secret put SESSION_SECRET
+  //   npx wrangler secret put ADMIN_PASSWORD
+  //   npx wrangler secret put INGEST_SECRET
+  //   npx wrangler secret put SUPABASE_URL
+  //   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+  //   npx wrangler secret put RESEND_API_KEY
+  //   npx wrangler secret put CRON_SECRET
+}
