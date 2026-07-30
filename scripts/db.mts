@@ -142,15 +142,45 @@ async function seed({ force = false } = {}) {
   console.log("✓ seeded");
 }
 
+/** The deployed host, read from wrangler.jsonc rather than the local env. */
+async function deployedBase(): Promise<string | null> {
+  try {
+    const text = await readFile(path.join(here, "..", "wrangler.jsonc"), "utf8");
+    // Strip whole-line // comments so JSONC parses. Values in this file contain
+    // no inline "//" except https:// URLs, which these lines never are.
+    const json = JSON.parse(text.replace(/^\s*\/\/.*$/gm, "")) as {
+      vars?: { APP_URL?: string };
+      routes?: Array<{ pattern?: string; custom_domain?: boolean }>;
+    };
+    if (json.vars?.APP_URL) return json.vars.APP_URL;
+    const custom = json.routes?.find((r) => r.custom_domain && r.pattern);
+    return custom?.pattern ? `https://${custom.pattern}` : null;
+  } catch {
+    return null;
+  }
+}
+
 async function links() {
-  const base = process.env.APP_URL ?? "http://localhost:3000";
+  /**
+   * Base URL from the deployed config, not APP_URL.
+   *
+   * These are the links you send to clients, but they are printed from a
+   * machine whose APP_URL is localhost — so reading it produces five plausible,
+   * unusable URLs. Taking the host from wrangler.jsonc means the output is
+   * sendable without having to pass anything or remember to substitute.
+   */
+  const base = (process.argv[3] ?? (await deployedBase()) ?? "http://localhost:3000")
+    .replace(/\/$/, "");
   const rows = await sql<{ name: string; portal_token: string }>`
     select name, portal_token from clients where archived_at is null order by name
   `;
   if (rows.length === 0) return console.log("no clients yet — run: npm run db:seed");
   console.log("\nClient portal links\n");
   for (const r of rows) console.log(`  ${r.name.padEnd(30)} ${base}/p/${r.portal_token}`);
-  console.log();
+  console.log(
+    `\n  Base: ${base}   (override: npm run db:links -- https://other.host)\n` +
+      `  These tokens ARE the credential — treat them like passwords.\n`,
+  );
 }
 
 const cmd = process.argv[2];
