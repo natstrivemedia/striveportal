@@ -31,10 +31,75 @@ declare global {
   var __strivePGliteHooked: boolean | undefined;
 }
 
+/**
+ * Validate the connection string before postgres.js does, to get a usable error.
+ *
+ * postgres.js parses it with `new URL()`, which on Workers throws a bare
+ * "TypeError: Invalid URL string." — it names no variable and says nothing about
+ * what is wrong. Deployed, that surfaces as an unexplained 500 on every
+ * database-backed page while the login page keeps working, because login is the
+ * one route that never touches Postgres. That combination reads like a routing
+ * problem and sends you looking in the wrong place entirely.
+ *
+ * A Worker secret cannot be read back, so the error message is the only
+ * diagnostic available. Every branch below names DATABASE_URL and describes the
+ * defect without echoing the password.
+ */
+function assertUsableConnectionString(url: string): void {
+  const fix = "Fix with: npx wrangler secret put DATABASE_URL";
+  const expected =
+    "Expected postgresql://user:password@host:6543/postgres";
+
+  if (url !== url.trim()) {
+    throw new Error(`DATABASE_URL has leading or trailing whitespace. ${fix}`);
+  }
+  if (/^[<[]|[>\]]$/.test(url)) {
+    throw new Error(
+      `DATABASE_URL is wrapped in < > or [ ] brackets — paste it without them. ${fix}`,
+    );
+  }
+  if (url.includes("[YOUR-PASSWORD]")) {
+    throw new Error(
+      `DATABASE_URL still contains the literal [YOUR-PASSWORD] placeholder. ${fix}`,
+    );
+  }
+  if (/\s/.test(url)) {
+    throw new Error(
+      `DATABASE_URL contains a space, so it is probably the psql command form ` +
+        `rather than the URI. ${expected}. ${fix}`,
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Length and the first few characters only — both structural, never secret.
+    throw new Error(
+      `DATABASE_URL is not a parseable URL (${url.length} chars, begins ` +
+        `"${url.slice(0, 12)}"). ${expected}. ${fix}`,
+    );
+  }
+
+  const scheme = parsed.protocol.replace(":", "");
+  if (!/^postgres(ql)?$/.test(scheme)) {
+    throw new Error(
+      `DATABASE_URL scheme is "${scheme}", expected "postgresql". ${fix}`,
+    );
+  }
+  if (!parsed.password) {
+    throw new Error(
+      `DATABASE_URL has no password — Supabase shows [YOUR-PASSWORD] as a ` +
+        `placeholder you must replace. ${fix}`,
+    );
+  }
+}
+
 async function createDriver(): Promise<Driver> {
   const url = process.env.DATABASE_URL;
 
   if (url) {
+    assertUsableConnectionString(url);
     const { default: postgres } = await import("postgres");
     const client = postgres(url, {
       // Supabase's transaction pooler does not support prepared statements.
