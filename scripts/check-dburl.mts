@@ -79,7 +79,40 @@ if (raw.trim() === "") {
 }
 
 const problems: string[] = [];
-const trimmed = raw.trim();
+const notes: string[] = [];
+let trimmed = raw.trim();
+
+/**
+ * Name the format before validating it.
+ *
+ * Supabase's Connect dialog offers the same credentials in several shapes —
+ * URI, psql, JDBC, .NET, and per-language snippets — and only the URI belongs
+ * in DATABASE_URL. "Does not parse as a URL" is true of all the others and
+ * tells you nothing about which one you grabbed, so identify it by name and say
+ * where the right one is.
+ */
+if (/^psql\b/i.test(trimmed)) {
+  problems.push(
+    'this is the "psql" command, not the URI — in Supabase\'s Connect dialog, ' +
+      "switch the Type dropdown from psql to URI",
+  );
+} else if (/^jdbc:/i.test(trimmed)) {
+  problems.push('this is the JDBC form — switch the Type dropdown to "URI"');
+} else if (/(^|\s)(Host|User|Password|Port|Database)\s*[:=]/i.test(trimmed)) {
+  problems.push(
+    "this looks like the parameters panel copied as a block, not a single " +
+      'connection string — switch the Type dropdown to "URI"',
+  );
+}
+
+// Tolerate the shapes people reasonably paste: an env-file line, or quotes.
+const stripped = trimmed
+  .replace(/^(export\s+)?DATABASE_URL\s*=\s*/i, "")
+  .replace(/^["']|["']$/g, "");
+if (stripped !== trimmed) {
+  notes.push('ignored a leading "DATABASE_URL=" and/or surrounding quotes');
+  trimmed = stripped;
+}
 
 // Strip a bracket wrapper before parsing, but still report it — this is the
 // exact mistake that turns a valid string into "Invalid URL string".
@@ -98,6 +131,26 @@ try {
   parsed = new URL(unwrapped);
 } catch {
   problems.push("does not parse as a URL — this is exactly what the Worker hits");
+
+  /**
+   * Show just enough to recognise what was pasted.
+   *
+   * Everything up to the first ":" after the scheme is structural — in
+   * "postgresql://postgres.abc:pw@host" that is the scheme and username, never
+   * the password. Cutting there identifies the format without leaking the
+   * credential. Strings with no "://" get a length only, since there is no
+   * safe boundary to cut at.
+   */
+  const marker = unwrapped.indexOf("://");
+  if (marker !== -1) {
+    const colon = unwrapped.indexOf(":", marker + 3);
+    const head = unwrapped.slice(0, colon === -1 ? Math.min(marker + 3, 40) : colon);
+    console.log(`  starts with  ${head}:…`);
+    console.log(`  length       ${unwrapped.length} chars\n`);
+  } else {
+    console.log(`  no "://" anywhere — not a connection URI at all`);
+    console.log(`  length       ${unwrapped.length} chars\n`);
+  }
 }
 
 if (parsed) {
@@ -125,11 +178,19 @@ if (parsed) {
   }
 }
 
+for (const n of notes) console.log(`  note: ${n}`);
+if (notes.length) console.log();
+
 if (problems.length === 0) {
   console.log("✓ Structurally valid. If the Worker still fails, the credential");
   console.log("  itself is wrong — wrong password, or the project is paused.");
 } else {
   console.log("✗ Problems found:");
   for (const p of problems) console.log(`    - ${p}`);
+  console.log();
+  console.log("  A correct pooled string looks exactly like this shape:");
+  console.log("    postgresql://postgres.<ref>:<password>@<region>.pooler.supabase.com:6543/postgres");
+  console.log();
+  console.log("  Supabase dashboard → Connect → Type: URI → Transaction pooler.");
   process.exit(1);
 }
