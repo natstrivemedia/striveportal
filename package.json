@@ -21,7 +21,8 @@
     "db:security": "tsx scripts/check-rls.mts",
     "db:checkurl": "tsx scripts/check-dburl.mts",
     "smoke:prod": "tsx scripts/smoke-prod.mts",
-    "secrets:check": "tsx scripts/check-secrets.mts"
+    "secrets:check": "tsx scripts/check-secrets.mts",
+    "secrets:template": "tsx scripts/secrets-template.mts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
