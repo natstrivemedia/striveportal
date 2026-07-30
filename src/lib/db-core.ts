@@ -49,10 +49,38 @@ const STATEMENT_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS ?? 10000);
  * but to stop awaiting it, so the caller fails with a message instead of
  * hanging until the runtime kills the whole request.
  */
-function withDeadline<R>(promise: Promise<R>, ms: number): Promise<R> {
+/**
+ * Explain a timeout against Supabase's direct endpoint.
+ *
+ * `db.<ref>.supabase.co` publishes only an AAAA record, so it is unreachable
+ * from any IPv4-only network — and the symptom is a connection that never
+ * completes rather than a DNS or refusal error. Cloudflare reaches it fine,
+ * which is why production can be healthy while local commands hang.
+ */
+function directEndpointHint(url: string): string {
+  try {
+    if (!/^db\..*\.supabase\.co$/.test(new URL(url).hostname)) return "";
+  } catch {
+    return "";
+  }
+  return (
+    "\n  This is Supabase's DIRECT endpoint, which is IPv6-only and unreachable" +
+    "\n  from an IPv4 network. Use the Session pooler instead: dashboard ->" +
+    "\n  Connect -> Session pooler, then replace the DATABASE_URL line in" +
+    "\n  .env.local. The username becomes postgres.<project-ref> and the host" +
+    "\n  becomes <region>.pooler.supabase.com; the port stays 5432."
+  );
+}
+
+function withDeadline<R>(promise: Promise<R>, ms: number, hint = ""): Promise<R> {
   return new Promise<R>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error(`database statement exceeded ${ms}ms — connection is probably dead`)),
+      () =>
+        reject(
+          new Error(
+            `database statement exceeded ${ms}ms — connection is probably dead${hint}`,
+          ),
+        ),
       ms,
     );
     promise.then(
@@ -178,7 +206,7 @@ async function createDriver(): Promise<Driver> {
     const run = async <R>(fn: (c: Client) => Promise<R>): Promise<R> => {
       const client = make();
       try {
-        return await withDeadline(fn(client), STATEMENT_TIMEOUT_MS);
+        return await withDeadline(fn(client), STATEMENT_TIMEOUT_MS, directEndpointHint(url));
       } finally {
         // Fire-and-forget: the response should not wait on a socket teardown.
         void client.end({ timeout: 1 }).catch(() => {});
