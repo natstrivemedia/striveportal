@@ -30,20 +30,29 @@ git push -u origin main
 ## 2. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com). Save the database
-   password — it appears once.
-2. **Settings → Database → Connection string → URI.** Take the **pooled**
-   connection on port `6543` and add `?pgbouncer=true`.
+   password — it appears once, and the connection string contains
+   `[YOUR-PASSWORD]` as a literal placeholder you must replace.
+2. Click **Connect** at the top of the project dashboard. (It is no longer under
+   Settings → Database.) You need **two** strings from this modal:
+   - **Transaction pooler**, port `6543` — for the deployed app. Serverless
+     opens many short-lived connections, which is what this pooler is for. It
+     does not support prepared statements, which is why the driver sets
+     `prepare: false`.
+   - **Direct connection** (or **Session pooler** on IPv4-only networks),
+     port `5432` — for running migrations from your machine.
 3. **Storage → New bucket** → name it `media`, leave it **private**. The app
    never serves storage URLs directly; `/api/media/[id]` re-checks entitlement
    on every request.
 4. **Settings → API** → copy the project URL and the `service_role` key.
 
-Apply the schema from your machine:
+Apply the schema from your machine, using the **direct** connection:
 
 ```bash
-DATABASE_URL="postgresql://...:6543/postgres?pgbouncer=true" npm run db:migrate
-DATABASE_URL="..." npm run db:seed     # optional: the five demo clients
+DATABASE_URL="postgresql://...@...:5432/postgres" npm run db:migrate
+DATABASE_URL="postgresql://...@...:5432/postgres" npm run db:seed   # optional demo clients
 ```
+
+The app itself gets the **pooled** string (`6543`) as its `DATABASE_URL` secret.
 
 `src/lib/schema.sql` is plain Postgres and is the same file PGlite runs locally,
 so nothing is translated on the way up.

@@ -52,7 +52,21 @@ async function createDriver(): Promise<Driver> {
     };
   }
 
-  const { PGlite } = await import("@electric-sql/pglite");
+  /**
+   * Imported through a variable specifier on purpose.
+   *
+   * A literal `import("@electric-sql/pglite")` lets bundlers follow the graph
+   * and pull in its 9.6 MB of WASM — which then blows the Cloudflare Workers
+   * script size limit for a dependency that can never execute there anyway
+   * (production always has DATABASE_URL, so this branch is unreachable).
+   * A computed specifier defers resolution to runtime, where Node finds it
+   * normally and Workers never asks.
+   */
+  const pgliteModule = ["@electric-sql", "pglite"].join("/");
+  const { PGlite } = (await import(
+    /* webpackIgnore: true */ /* @vite-ignore */ pgliteModule
+  )) as typeof import("@electric-sql/pglite");
+
   const dir = process.env.PGLITE_DIR ?? ".data/pgdata";
 
   // PGlite's node filesystem layer calls a non-recursive mkdir, so it fails if

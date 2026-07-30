@@ -11,6 +11,7 @@
     "db:seed": "tsx scripts/db.mts seed",
     "db:reset": "tsx scripts/db.mts reset",
     "db:links": "tsx scripts/db.mts links",
+    "db:setup": "tsx scripts/db.mts migrate && tsx scripts/db.mts seed",
     "sync:push": "tsx scripts/push-metricool.mts",
     "verify": "tsx --conditions=react-server scripts/verify.mts",
     "verify:http": "tsx scripts/verify-http.mts",
