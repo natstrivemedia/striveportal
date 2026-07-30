@@ -17,7 +17,7 @@
     "verify:http": "tsx scripts/verify-http.mts",
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare preview",
-    "cf:deploy": "opennextjs-cloudflare deploy",
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "db:security": "tsx scripts/check-rls.mts",
     "db:checkurl": "tsx scripts/check-dburl.mts",
     "smoke:prod": "tsx scripts/smoke-prod.mts",
