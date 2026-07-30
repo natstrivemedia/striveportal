@@ -397,3 +397,53 @@ create table if not exists workspace (
 );
 
 insert into workspace (id) values (1) on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Migration 007 — lock the tables against Supabase's public API.
+--
+-- Supabase exposes every table in `public` over PostgREST, and grants the
+-- `anon` and `authenticated` roles table privileges by default. The anon key
+-- is designed to be public — it ships in browser code on a normal Supabase
+-- app — so with RLS off, anybody holding it can read this entire database:
+-- client names, draft captions, portal tokens. Portal tokens are the whole
+-- credential here, so that is not a leak we can absorb.
+--
+-- Enabling RLS with NO policies denies anon and authenticated outright. The
+-- app is unaffected: it connects as `postgres`, which owns these tables, and
+-- an owner bypasses RLS unless FORCE ROW LEVEL SECURITY is set. service_role
+-- carries BYPASSRLS for the same reason.
+--
+-- So this is deny-by-default for the public API and a no-op for us. The
+-- authorization that matters still lives in the app layer, where every query
+-- is already scoped to one resolved client_id — this is the second lock on
+-- the door, not the first.
+--
+-- Idempotent: enabling RLS twice is not an error.
+--
+-- Written out flat rather than as a DO block over pg_tables. Flat DDL fails
+-- loudly and per-statement, where a loop that matches nothing looks identical
+-- to a loop that worked. Verify the end state with `npm run db:security` —
+-- it names the database it inspected, because a clean report about the wrong
+-- one is worse than no report.
+-- ---------------------------------------------------------------------------
+
+alter table clients              enable row level security;
+alter table client_contacts      enable row level security;
+alter table calendars            enable row level security;
+alter table items                enable row level security;
+alter table item_media           enable row level security;
+alter table comments             enable row level security;
+alter table approvals            enable row level security;
+alter table analytics_snapshots  enable row level security;
+alter table analytics_posts      enable row level security;
+alter table sync_runs            enable row level security;
+alter table notifications_log    enable row level security;
+alter table ideas                enable row level security;
+alter table competitors          enable row level security;
+alter table competitor_snapshots enable row level security;
+alter table content_pillars      enable row level security;
+alter table client_strategy      enable row level security;
+alter table smart_goals          enable row level security;
+alter table item_variants        enable row level security;
+alter table calendar_events      enable row level security;
+alter table workspace            enable row level security;
