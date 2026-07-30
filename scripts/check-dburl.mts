@@ -1,85 +1,135 @@
 /**
  * Diagnose a Postgres connection string without revealing it.
  *
- * Deploying a malformed DATABASE_URL fails with a bare "TypeError: Invalid URL
- * string" from inside postgres.js — no indication of which part is wrong, and
- * a Worker secret cannot be read back to inspect it. This checks the string
- * structurally and reports only shape: scheme, host, port, whether a password
- * is present. It never prints the password or the string itself, so it is safe
- * to run and safe to paste the output of.
+ * A malformed DATABASE_URL surfaces only as "TypeError: Invalid URL string"
+ * from inside postgres.js, and a Worker secret cannot be read back to inspect
+ * it. This reports shape only — scheme, host, port, whether a password is
+ * present — never the password or the string itself, so the output is safe to
+ * share.
  *
- *   npm run db:checkurl
+ *   npm run db:checkurl              # hidden prompt
+ *   Get-Content file | npm run db:checkurl    # or pipe it in
  *
- * Paste the string at the prompt. Input is not echoed and not stored.
+ * Input is never echoed, never logged, and never written anywhere.
  */
-import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
-const rl = createInterface({ input: stdin, output: stdout, terminal: true });
+/**
+ * Read a line with echo off.
+ *
+ * Raw mode rather than readline: an earlier version tried to suppress
+ * readline's echo by replacing stdout.write, which swallowed the prompt too and
+ * left the script looking hung. Raw mode simply never echoes in the first
+ * place.
+ *
+ * Chunks matter — a pasted 100-character string arrives as one chunk, not 100
+ * keypresses, so this iterates characters instead of treating each chunk as a
+ * single key.
+ */
+function askHidden(prompt: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    stdout.write(prompt);
+    stdin.setRawMode?.(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
 
-// Suppress echo so the string never appears on screen or in scrollback.
-const wasRaw = stdin.isTTY;
-if (wasRaw) {
-  const write = stdout.write.bind(stdout);
-  (stdout as unknown as { write: typeof write }).write = ((chunk: string, ...rest: unknown[]) =>
-    // Let the prompt through, swallow the echoed characters.
-    typeof chunk === "string" && chunk.includes("Connection string")
-      ? write(chunk, ...(rest as []))
-      : true) as typeof write;
-  process.on("exit", () => {
-    (stdout as unknown as { write: typeof write }).write = write;
+    let buf = "";
+    const done = (value: string) => {
+      stdin.setRawMode?.(false);
+      stdin.pause();
+      stdin.off("data", onData);
+      stdout.write("\n\n");
+      resolve(value);
+    };
+
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (ch === "\r" || ch === "\n") return done(buf);
+        if (ch === "\u0003") {
+          stdin.setRawMode?.(false);
+          stdout.write("\n");
+          return reject(new Error("cancelled"));
+        }
+        if (ch === "\u007f" || ch === "\b") buf = buf.slice(0, -1);
+        else if (ch >= " ") buf += ch;
+      }
+    };
+
+    stdin.on("data", onData);
   });
 }
 
-const raw = await rl.question("Connection string (input hidden): ");
-rl.close();
-stdout.write("\n\n");
+/** Read all of stdin, for the piped case. */
+async function readPiped(): Promise<string> {
+  let data = "";
+  stdin.setEncoding("utf8");
+  for await (const chunk of stdin) data += chunk;
+  return data;
+}
+
+// A pipe has no TTY, so prompting into it would hang forever.
+const raw = stdin.isTTY
+  ? await askHidden("Connection string (input hidden, then press Enter): ")
+  : await readPiped();
+
+if (raw.trim() === "") {
+  console.log("Nothing read. Paste the string at the prompt, or pipe it in:");
+  console.log("  Get-Content yourfile.txt | npm run db:checkurl");
+  process.exit(1);
+}
 
 const problems: string[] = [];
 const trimmed = raw.trim();
 
-if (trimmed !== raw) problems.push("has leading/trailing whitespace or a newline");
-if (/^[<[]|[>\]]$/.test(trimmed)) {
-  problems.push("is wrapped in < > or [ ] brackets — paste the string without them");
+// Strip a bracket wrapper before parsing, but still report it — this is the
+// exact mistake that turns a valid string into "Invalid URL string".
+const unwrapped = trimmed.replace(/^[<[]/, "").replace(/[>\]]$/, "");
+if (unwrapped !== trimmed) {
+  problems.push("is wrapped in < > or [ ] brackets — paste it without them");
 }
+if (/^\S*\s+\S/.test(trimmed)) problems.push("contains an internal space");
 if (trimmed.includes("[YOUR-PASSWORD]")) {
   problems.push("still contains the literal [YOUR-PASSWORD] placeholder");
 }
-if (/\s/.test(trimmed)) problems.push("contains an internal space");
+if (trimmed.includes("\n")) problems.push("contains a line break");
 
 let parsed: URL | null = null;
 try {
-  parsed = new URL(trimmed.replace(/^[<[]|[>\]]$/g, ""));
+  parsed = new URL(unwrapped);
 } catch {
-  problems.push("is not a parseable URL — this is the exact failure the Worker hits");
+  problems.push("does not parse as a URL — this is exactly what the Worker hits");
 }
 
 if (parsed) {
-  console.log("  scheme    ", parsed.protocol.replace(":", ""));
+  const scheme = parsed.protocol.replace(":", "");
+  console.log("  scheme    ", scheme);
   console.log("  host      ", parsed.hostname);
-  console.log("  port      ", parsed.port || "(none — Postgres will assume 5432)");
+  console.log("  port      ", parsed.port || "(none — Postgres assumes 5432)");
   console.log("  database  ", parsed.pathname.replace(/^\//, "") || "(none)");
   console.log("  user      ", parsed.username || "(none)");
-  console.log("  password  ", parsed.password ? `present (${parsed.password.length} chars)` : "MISSING");
+  console.log(
+    "  password  ",
+    parsed.password ? `present (${parsed.password.length} chars)` : "MISSING",
+  );
   console.log();
 
-  if (!/^postgres(ql)?$/.test(parsed.protocol.replace(":", ""))) {
-    problems.push(`scheme is "${parsed.protocol.replace(":", "")}", expected postgresql`);
+  if (!/^postgres(ql)?$/.test(scheme)) {
+    problems.push(`scheme is "${scheme}", expected postgresql`);
   }
-  if (!parsed.password) problems.push("no password in the string");
+  if (!parsed.password) problems.push("has no password");
   if (parsed.port === "5432") {
-    console.log("  Note: port 5432 is the DIRECT connection. Correct for local");
-    console.log("  migrations; the Worker wants the POOLED string on 6543.\n");
-  }
-  if (parsed.port === "6543") {
-    console.log("  Note: port 6543 is the pooled connection — correct for the Worker.\n");
+    console.log("  Port 5432 is the DIRECT connection — right for local");
+    console.log("  migrations, but the Worker wants POOLED on 6543.\n");
+  } else if (parsed.port === "6543") {
+    console.log("  Port 6543 is the pooled connection — right for the Worker.\n");
   }
 }
 
 if (problems.length === 0) {
   console.log("✓ Structurally valid. If the Worker still fails, the credential");
-  console.log("  itself is wrong (wrong password, or the project was paused).");
+  console.log("  itself is wrong — wrong password, or the project is paused.");
 } else {
   console.log("✗ Problems found:");
   for (const p of problems) console.log(`    - ${p}`);
+  process.exit(1);
 }
