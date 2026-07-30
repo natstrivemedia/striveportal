@@ -69,26 +69,36 @@ so nothing is translated on the way up.
 npx wrangler login
 ```
 
-Set each secret (values are never written to the repo):
+Non-secret config (`APP_URL`, `ADMIN_NAME`, `ADMIN_TZ`, `SUPABASE_BUCKET`) lives
+in `vars` in `wrangler.jsonc` — it is not sensitive and belongs in version
+control.
+
+Secrets split into two groups. The three the app only ever compares against
+itself are generated, never typed:
 
 ```bash
-npx wrangler secret put DATABASE_URL
-npx wrangler secret put SESSION_SECRET      # openssl rand -base64 32
+# Write {"SESSION_SECRET": "...", "INGEST_SECRET": "...", "CRON_SECRET": "..."}
+# to a file OUTSIDE the repo, using 32 random bytes each, then:
+npx wrangler secret bulk ../secrets.json
+rm ../secrets.json
+```
+
+Keep your own copy of `INGEST_SECRET` — `sync:push` needs it to reach production.
+`.secrets.local.txt` is gitignored for exactly this.
+
+The four that are real credentials get an interactive prompt each, so the value
+never lands in shell history:
+
+```bash
+npx wrangler secret put DATABASE_URL              # pooled string, port 6543
 npx wrangler secret put ADMIN_PASSWORD
-npx wrangler secret put INGEST_SECRET
-npx wrangler secret put CRON_SECRET
 npx wrangler secret put SUPABASE_URL
 npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-npx wrangler secret put APP_URL             # https://portal.yourdomain.com
-npx wrangler secret put ADMIN_NAME
-npx wrangler secret put RESEND_API_KEY      # step 5
-npx wrangler secret put MAIL_FROM
 ```
 
 Then:
 
 ```bash
-npm run cf:preview   # runs the Workers build locally
 npm run cf:deploy
 ```
 
@@ -100,15 +110,33 @@ npm run cf:deploy
   only exists on Workers with this flag.
 - **`global_fetch_strictly_public`** — required by the OpenNext adapter.
 
+It also sets **`workers_dev: false`** with a `custom_domain` route. Deploying
+straight to the real hostname skips workers.dev registration entirely, and means
+there is never a second URL that also serves your clients' content.
+
+**Watch the bundle size.** The free plan caps a Worker at 3 MB gzipped and this
+build sits at ~2.3 MB. PGlite's 9.6 MB of WASM would blow straight through that,
+so `src/lib/db-core.ts` imports it through a *computed* specifier — bundlers
+can't follow the graph, and the branch is unreachable in production anyway.
+Don't "clean that up" into a literal `import()`.
+
 ---
 
 ## 4. Domain
 
-Cloudflare dashboard → **Workers & Pages → strive-portal → Settings → Domains**
-→ add `portal.yourdomain.com`. If the domain's nameservers are already on
-Cloudflare, DNS and TLS are automatic.
+Handled by the `routes` entry in `wrangler.jsonc`:
 
-Then set `APP_URL` to the final URL — portal links in emails are built from it.
+```jsonc
+"routes": [{ "pattern": "portal.strivemediaco.com", "custom_domain": true }]
+```
+
+Because the zone is already on Cloudflare, `wrangler deploy` creates the DNS
+record and issues the certificate itself. Nothing to click.
+
+Live at **https://portal.strivemediaco.com**.
+
+If you change the hostname, change `APP_URL` in `vars` to match — portal links
+in emails are built from it, and a stale value sends clients somewhere dead.
 
 ---
 

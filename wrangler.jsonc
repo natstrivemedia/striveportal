@@ -8,6 +8,28 @@
   // global_fetch_strictly_public: required by the OpenNext adapter.
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
+  // Deployed straight to the real domain. strivemediaco.com is already on
+  // Cloudflare, so `custom_domain` creates the DNS record and TLS certificate
+  // automatically — no workers.dev subdomain needed, and clients only ever see
+  // a Strive Media URL.
+  "routes": [
+    {
+      "pattern": "portal.strivemediaco.com",
+      "custom_domain": true
+    }
+  ],
+  "workers_dev": false,
+
+  // Not secrets — these are safe in git and would otherwise be four more
+  // prompts to type. APP_URL builds the portal links that go out in emails, so
+  // it has to match the route above exactly.
+  "vars": {
+    "APP_URL": "https://portal.strivemediaco.com",
+    "ADMIN_NAME": "Nat",
+    "ADMIN_TZ": "America/New_York",
+    "SUPABASE_BUCKET": "media"
+  },
+
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -24,13 +46,18 @@
     "enabled": true
   }
 
-  // Secrets are NOT set here — they'd end up in git. Set them with:
-  //   npx wrangler secret put DATABASE_URL
-  //   npx wrangler secret put SESSION_SECRET
+  // Secrets are NOT set here — they'd end up in git.
+  //
+  // Already set (generated, never typed): SESSION_SECRET, INGEST_SECRET,
+  // CRON_SECRET. Values are in .secrets.local.txt, which is gitignored.
+  //
+  // You still need to set these four, each with its own prompt:
+  //   npx wrangler secret put DATABASE_URL              # pooled string, port 6543
   //   npx wrangler secret put ADMIN_PASSWORD
-  //   npx wrangler secret put INGEST_SECRET
   //   npx wrangler secret put SUPABASE_URL
   //   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+  //
+  // Optional, for email (until then emails are logged, not sent):
   //   npx wrangler secret put RESEND_API_KEY
-  //   npx wrangler secret put CRON_SECRET
+  //   npx wrangler secret put MAIL_FROM
 }
