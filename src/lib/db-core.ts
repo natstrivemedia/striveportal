@@ -32,6 +32,43 @@ declare global {
 }
 
 /**
+ * How long one statement may take, connection included, before it is abandoned.
+ *
+ * Generous on purpose. Every statement opens its own connection, so this covers
+ * a TCP and TLS handshake plus the query, and exceeding it means the database is
+ * genuinely unreachable rather than merely slow. Its job is to make a hang
+ * impossible, not to enforce a latency budget: a hung request is a 500 with an
+ * empty log, while a timeout is an error that names itself.
+ */
+const STATEMENT_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS ?? 10000);
+
+/**
+ * Reject if `promise` has not settled within `ms`.
+ *
+ * The point is not to cancel the query — a lost socket cannot be cancelled —
+ * but to stop awaiting it, so the caller fails with a message instead of
+ * hanging until the runtime kills the whole request.
+ */
+function withDeadline<R>(promise: Promise<R>, ms: number): Promise<R> {
+  return new Promise<R>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`database statement exceeded ${ms}ms — connection is probably dead`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
  * Validate the connection string before postgres.js does, to get a usable error.
  *
  * postgres.js parses it with `new URL()`, which on Workers throws a bare
@@ -101,19 +138,63 @@ async function createDriver(): Promise<Driver> {
   if (url) {
     assertUsableConnectionString(url);
     const { default: postgres } = await import("postgres");
-    const client = postgres(url, {
-      // Supabase's transaction pooler does not support prepared statements.
-      prepare: false,
-      max: 5,
-      idle_timeout: 20,
-    });
+    type Client = ReturnType<typeof postgres>;
+
+    const make = (): Client =>
+      postgres(url, {
+        // Supabase's transaction pooler does not support prepared statements.
+        prepare: false,
+        // One socket: this client serves exactly one statement and is discarded.
+        max: 1,
+        connect_timeout: 10,
+      });
+
+    /**
+     * A connection per statement, not a pool held across requests.
+     *
+     * This looks wasteful and is in fact the cheaper option on Workers. An
+     * isolate outlives the request that created it but its timers do not run in
+     * between, so postgres.js never learns that Supabase's pooler dropped the
+     * idle connection. It writes the next query into a dead socket and waits
+     * forever; the runtime then kills the request with "your Worker's code had
+     * hung", which reaches you as a 500 with nothing in the logs. That is the
+     * failure that looked like a credentials problem for hours.
+     *
+     * Reusing the pool and probing for death first was measurably worse: the
+     * socket was dead on *every* request, so each one paid the full probe
+     * timeout before retrying — 8.3s at an 8s deadline, 2.3s at 2s. The probe
+     * was pure waste, because there was never a live connection to find.
+     *
+     * Opening one costs a TCP and TLS handshake, and Next issues a page's
+     * queries concurrently so those handshakes overlap rather than accumulate.
+     * The deadline stays as a guard: a fresh connection should not hang, and if
+     * it does, an error beats a hang.
+     *
+     * If this is ever too slow, the fix is Hyperdrive — it keeps the pool warm
+     * on Cloudflare's side, which is the thing a Worker cannot do for itself.
+     * It is free on this plan. This code is the version that needs no extra
+     * service to be correct.
+     */
+    const run = async <R>(fn: (c: Client) => Promise<R>): Promise<R> => {
+      const client = make();
+      try {
+        return await withDeadline(fn(client), STATEMENT_TIMEOUT_MS);
+      } finally {
+        // Fire-and-forget: the response should not wait on a socket teardown.
+        void client.end({ timeout: 1 }).catch(() => {});
+      }
+    };
+
     return {
       query: async <T>(text: string, params: unknown[]) =>
-        (await client.unsafe(text, params as never[])) as unknown as T[],
+        run(async (c) => (await c.unsafe(text, params as never[])) as unknown as T[]),
       exec: async (text: string) => {
-        await client.unsafe(text).simple();
+        await run(async (c) => {
+          await c.unsafe(text).simple();
+        });
       },
-      close: () => client.end({ timeout: 5 }),
+      // Nothing is retained between statements, so there is nothing to close.
+      close: async () => {},
     };
   }
 
