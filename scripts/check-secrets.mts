@@ -51,6 +51,31 @@ const checks: Record<string, { label: string; check: Check }> = {
       if (u.port !== "6543") {
         return `port is ${u.port || "unset"} — the Worker needs the POOLED string on 6543`;
       }
+
+      /**
+       * Host, port and username have to agree.
+       *
+       * Supabase offers two endpoints with different username conventions, and
+       * mixing them fails at authentication with "password authentication
+       * failed for user postgres" — which sends you off resetting a password
+       * that was never wrong. The pooler multiplexes many projects onto one
+       * hostname and reads the project ref out of the username, so it needs
+       * `postgres.<ref>`; the direct host is already project-specific and takes
+       * plain `postgres`.
+       */
+      const pooled = u.hostname.includes("pooler.supabase.com");
+      if (pooled && !/^postgres\.[a-z0-9]+$/.test(u.username)) {
+        return (
+          `user is "${u.username}" but the pooler needs "postgres.<project-ref>" — ` +
+          `copy the Transaction pooler URI rather than editing the direct one`
+        );
+      }
+      if (!pooled && u.hostname.startsWith("db.")) {
+        return (
+          `host "${u.hostname}" is the DIRECT endpoint but the port is 6543 — ` +
+          `use the Transaction pooler host, or port 5432 with this host`
+        );
+      }
       return null;
     },
   },
